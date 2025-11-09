@@ -5,21 +5,42 @@ import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import type * as Leaflet from 'leaflet';
 
-// ✅ Lazy load react-leaflet components (client-side only)
+// Lazy load react-leaflet components
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then(m => m.Popup), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 
-export default function BusMap() {
+interface BusStop {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  estimated_arrival: string;
+  is_next_stop: boolean;
+}
+
+interface Bus {
+  id: number;
+  name: string;
+  current_location: { latitude: number; longitude: number; address: string };
+  status: string;
+  passengers: { current: number; capacity: number; utilization_percentage: number };
+  bus_stops: BusStop[];
+}
+
+interface BusMapProps {
+  busData: Bus;
+}
+
+export default function BusMap({ busData }: BusMapProps) {
   const [isClient, setIsClient] = useState(false);
   const [L, setLeaflet] = useState<typeof Leaflet | null>(null);
   const [busIcon, setBusIcon] = useState<Leaflet.Icon | null>(null);
   const [stopIcon, setStopIcon] = useState<Leaflet.Icon | null>(null);
 
   useEffect(() => {
-    // ✅ ننتظر حتى يجهز الـ DOM
     setIsClient(true);
 
     (async () => {
@@ -44,7 +65,6 @@ export default function BusMap() {
       setStopIcon(stop);
     })();
 
-    // ✅ تنظيف الخريطة عند إزالة الكومبوننت
     return () => {
       const container = document.getElementById('map');
       if (container) container.innerHTML = '';
@@ -55,32 +75,31 @@ export default function BusMap() {
     return <p className="text-center text-gray-500">Loading map...</p>;
   }
 
-  const busStops = [
-    { id: 1, name: 'Ramallah Station', position: [31.9, 35.2] as [number, number], arrival: '09:45' },
-    { id: 2, name: 'Birzeit Stop', position: [31.95, 35.23] as [number, number], arrival: '10:00' },
-    { id: 3, name: 'Nablus Station', position: [32.22, 35.26] as [number, number], arrival: '10:30' },
-    { id: 4, name: 'Jenin Station', position: [32.46, 35.29] as [number, number], arrival: '10:55' },
-  ];
+  const busStops = busData.bus_stops.map(stop => ({
+    id: stop.id,
+    name: stop.name,
+    position: [stop.latitude, stop.longitude] as [number, number],
+    arrival: stop.estimated_arrival,
+    isNext: stop.is_next_stop,
+  }));
 
-  const busPosition: [number, number] = [32.0, 35.24];
+  const busPosition: [number, number] = [
+    busData.current_location.latitude,
+    busData.current_location.longitude,
+  ];
 
   return (
     <div id="map" className="w-full h-80 rounded-md overflow-hidden border border-gray-300 shadow-sm">
       <MapContainer
-        center={[32.0, 35.23]}
-        zoom={9}
+        center={busPosition}
+        zoom={12}
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
         attributionControl={false}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        <Polyline
-          positions={busStops.map(stop => stop.position)}
-          color="gray"
-          weight={4}
-          opacity={0.8}
-        />
+        <Polyline positions={busStops.map(stop => stop.position)} color="gray" weight={4} opacity={0.8} />
 
         {busStops.map(stop => (
           <Marker key={stop.id} position={stop.position} icon={stopIcon}>
@@ -88,7 +107,7 @@ export default function BusMap() {
               <div className="bg-green-100 border border-green-300 p-2 rounded-md text-sm text-gray-800 text-center">
                 <strong>{stop.name}</strong>
                 <br />
-                Next Bus Arrival Time: <strong>{stop.arrival}</strong>
+                Next Bus Arrival: <strong>{stop.arrival}</strong>
               </div>
             </Popup>
           </Marker>
@@ -97,13 +116,13 @@ export default function BusMap() {
         <Marker position={busPosition} icon={busIcon}>
           <Popup>
             <div className="bg-yellow-100 border border-yellow-300 p-2 rounded-md text-sm text-gray-800 text-center">
-              <strong>Bus 1</strong>
+              <strong>{busData.name}</strong>
               <br />
-              Status: Active
+              Status: {busData.status}
               <br />
-              Capacity: 35%
+              Capacity: {busData.passengers.utilization_percentage}%
               <br />
-              Next Stop: Nablus Station
+              Next Stop: {busStops.find(stop => stop.isNext)?.name || 'N/A'}
             </div>
           </Popup>
         </Marker>
